@@ -1,5 +1,6 @@
 let content = $("#content");
 let token = localStorage.getItem("presensi-unpam:token");
+let userClass = null;
 
 function Login() {
   let nim = $("#input-nim").val();
@@ -51,6 +52,7 @@ function Logout() {
 async function UpdateDOM() {
   if (token) {
     let schedules = await LoadSchedule();
+    userClass = schedules[0].id_kelas ?? null;
     let el = "";
     schedules.map((schedule) => {
       el += `<button class="btn btn-success py-3" onclick="LoadClass('${schedule.id_mata_kuliah}', '${schedule.nama_mata_kuliah}')">
@@ -102,6 +104,20 @@ function LoadSchedule() {
 }
 
 function LoadClass(code, name) {
+  if (!userClass) {
+    Swal.fire({
+      title: "ERROR",
+      icon: "error",
+      text: "Kode Kelas tidak ditemukan",
+      showCloseButton: false,
+      showConfirmButton: false,
+    });
+    setTimeout(() => {
+      Logout();
+    }, 2500);
+    return;
+  }
+
   Swal.fire({
     text: "Loading...",
     showCloseButton: false,
@@ -109,7 +125,7 @@ function LoadClass(code, name) {
   });
 
   $.ajax({
-    url: `https://presensi.unpam.ac.id/api/mahasiswa/jadwal-pertemuan/${code}/01TPLM002`,
+    url: `https://presensi.unpam.ac.id/api/mahasiswa/jadwal-pertemuan/${code}/${userClass}`,
     type: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -132,7 +148,7 @@ function LoadClass(code, name) {
             ${
               row.presensi_status == "hadir"
                 ? ""
-                : `<button onclick="Present('${row.qrcode}')" class="btn btn-success">HADIR</button>`
+                : `<button onclick="Present('${row.qrcode}', '${row.id_mata_kuliah}')" class="btn btn-success">HADIR</button>`
             }
             </div>
         </div>
@@ -165,6 +181,44 @@ function LoadClass(code, name) {
   });
 }
 
-function Present(qrcode) {}
+function Present(qrcode, classCode) {
+  Swal.fire({
+    text: "Presensi...",
+    showCloseButton: false,
+    showConfirmButton: false,
+  });
+
+  $.ajax({
+    url: "https://presensi.unpam.ac.id/api/mahasiswa/scan-qrcode",
+    type: "POST",
+    contentType: "application/json",
+    data: JSON.stringify({ qrcode: qrcode }),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    success: function (data) {
+      Swal.fire({
+        title: "SUCCESS!",
+        text: `Berhasil scan kehadiran pada mata kuliah ${data.data.nama_mata_kuliah}`,
+        icon: "success",
+        showConfirmButton: false,
+      });
+
+      setTimeout(() => {
+        LoadClass(classCode, data.data.nama_mata_kuliah);
+      }, 1000);
+    },
+    error: function (error) {
+      Swal.fire({
+        title: "ERROR!",
+        text: error.statusText + ". Refresh dan coba lagi!",
+        icon: "error",
+        confirmButtonText: "OK",
+      });
+      console.error("ERROR: ", error.statusText);
+    },
+  });
+}
 
 UpdateDOM();
